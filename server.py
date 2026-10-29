@@ -1,0 +1,64 @@
+import json, sqlite3, os, base64, hmac
+from datetime import date
+from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
+ROOT=Path(__file__).parent
+DB=Path(os.environ.get('PECUARIA_DB',str(ROOT/'dados.sqlite3')))
+def connect():
+ c=sqlite3.connect(DB);c.row_factory=sqlite3.Row;return c
+with connect() as c:
+ c.execute('CREATE TABLE IF NOT EXISTS lots (id INTEGER PRIMARY KEY,name TEXT NOT NULL,entry TEXT NOT NULL,heads INTEGER NOT NULL,weight REAL NOT NULL)')
+ c.execute('CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY,lot INTEGER NOT NULL,kind TEXT NOT NULL,day TEXT NOT NULL,amount REAL NOT NULL,heads INTEGER,carcass REAL,note TEXT)')
+def state():
+ with connect() as c:
+  return {t:[dict(r) for r in c.execute('SELECT * FROM '+t+' ORDER BY id')] for t in ['lots','events']}
+def save(d):
+ kind=d.get('kind');day=d.get('day','');date.fromisoformat(day)
+ amount=float(d.get('amount',0))
+ if amount<=0: raise ValueError('Informe um peso ou quantidade maior que zero.')
+ with connect() as c:
+  if kind=='lot':
+   name=str(d.get('name','')).strip();heads=int(d.get('heads',0))
+   if not name or heads<=0: raise ValueError('Informe o nome e a quantidade de animais.')
+   c.execute('INSERT INTO lots(name,entry,heads,weight) VALUES(?,?,?,?)',(name,day,heads,amount))
+  else:
+   lot=int(d.get('lot',0));row=c.execute('SELECT * FROM lots WHERE id=?',(lot,)).fetchone()
+   if row is None: raise ValueError('Selecione um lote.')
+   if kind not in ['feed','weigh','slaughter']: raise ValueError('Lançamento inválido.')
+   if day<row['entry']: raise ValueError('A data deve ser posterior ou igual à entrada.')
+   events=[dict(r) for r in c.execute('SELECT * FROM events WHERE lot=?',(lot,))]
+   heads=int(d.get('heads') or 0);carcass=float(d.get('carcass') or 0)
+   if kind=='slaughter':
+    if heads<=0 or heads+sum(e['heads'] for e in events if e['kind']=='slaughter')>row['heads']: raise ValueError('Quantidade de animais indisponível no lote.')
+    if carcass<=0 or carcass>amount: raise ValueError('A carcaça total deve ser positiva e não superar o peso vivo total.')
+   if kind=='weigh' and any(e['kind']=='slaughter' and e['day']<=day for e in events): raise ValueError('Após abate parcial, use os pesos de saída dos animais abatidos para avaliar esse grupo.')
+   if kind in ['feed','weigh']:
+    remaining=row['heads']-sum(e['heads'] for e in events if e['kind']=='slaughter' and e['day']<=day)
+    if remaining<=0: raise ValueError('O lote não tem animais nesta data.')
+   c.execute('INSERT INTO events(lot,kind,day,amount,heads,carcass,note) VALUES(?,?,?,?,?,?,?)',(lot,kind,day,amount,heads,carcass,str(d.get('note',''))[:500]))
+class Handler(SimpleHTTPRequestHandler):
+ def __init__(self,*a,**kw):super().__init__(*a,directory=str(ROOT/'static'),**kw)
+ def send_json(self,obj,status=200):
+  data=json.dumps(obj).encode();self.send_response(status);self.send_header('Content-Type','application/json; charset=utf-8');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+ def authorized(self):
+  password=os.environ.get("APP_PASSWORD")
+  if not password:return True
+  expected="Basic "+base64.b64encode((os.environ.get("APP_USER","fazenda")+":"+password).encode()).decode()
+  if hmac.compare_digest(self.headers.get("Authorization", ""),expected):return True
+  self.send_response(401);self.send_header("WWW-Authenticate", 'Basic realm="Campo", charset="UTF-8"');self.send_header("Content-Length","0");self.end_headers();return False
+ def do_GET(self):
+  if self.path=="/health":return self.send_json({"status":"ok"})
+  if not self.authorized():return
+  if self.path=='/api/state':self.send_json(state())
+  else:super().do_GET()
+ def do_POST(self):
+  if not self.authorized():return
+  if self.path!='/api/events':return self.send_json({'error':'Não encontrado'},404)
+  try:
+   size=int(self.headers.get('Content-Length',0))
+   if size>10000:raise ValueError('Lançamento muito grande.')
+   save(json.loads(self.rfile.read(size)));self.send_json(state(),201)
+  except (ValueError,TypeError,KeyError) as e:self.send_json({'error':str(e)},400)
+if __name__=='__main__':
+ print('Pecuária disponível na porta '+os.environ.get('PORT','8000'),flush=True)
+ ThreadingHTTPServer(('0.0.0.0',int(os.environ.get('PORT','8000'))),Handler).serve_forever()
