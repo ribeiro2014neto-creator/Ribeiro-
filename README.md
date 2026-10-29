@@ -1,5 +1,5 @@
 # Campo — Gestão de pecuária
-Aplicativo local para TIP e semiconfinamento. Python 3.12+, sem dependências externas.
+Aplicativo local para TIP e semiconfinamento. Python 3.12+. Execução local com SQLite não requer dependências externas; PostgreSQL usa requirements.txt.
 
 ```sh
 cd /workspace/Ribeiro-
@@ -16,7 +16,15 @@ Primeira versão para uso local, sem autenticação ou controle multiusuário. N
 
 Validação: `python -m unittest discover -s tests -v`.
 
-## Publicação no Render
-No Render, use New > Blueprint e selecione este repositório. O render.yaml configura servidor e disco persistente; o plano Starter e o disco têm cobrança, apresentada pelo Render antes da criação. Defina APP_PASSWORD no painel seguro; o usuário inicial é `fazenda`. O navegador pedirá usuário e senha ao abrir o endereço HTTPS. Nenhuma senha deve ser enviada ao GitHub ou pelo chat. Para configurar manualmente: runtime Python, build `python -m compileall -q server.py`, start `python server.py`, health check `/health`, disco em `/var/data`, variável PECUARIA_DB=/var/data/pecuaria.sqlite3.
+## Publicação gratuita para testes
+Use um Web Service Free do Render e um projeto Free no Neon (PostgreSQL), sujeitos aos limites e condições vigentes dos provedores. O render.yaml não contrata disco nem plano pago. O serviço pode dormir e demorar no primeiro acesso.
 
-A proteção de acesso é HTTP Basic via HTTPS (sem cadastro de usuários ou recuperação de senha). APP_PASSWORD ausente mantém o modo local sem autenticação. `/health` é público e não retorna dados da fazenda. O banco continua precisando de backups.
+1. Crie um projeto gratuito em neon.tech. Em Connect, copie a connection string PostgreSQL com SSL exigido (sslmode=require ou mais estrito); não publique nem envie essa credencial pelo chat.
+2. No Render, New > Blueprint, selecione o repositório e main. Se a tela exigir contratação ou método de pagamento, pare e use New > Web Service com o plano Free.
+3. Defina DATABASE_URL com a conexão do Neon e APP_PASSWORD com uma senha forte, no painel seguro do Render. APP_USER é fazenda. Confira plano Free e ausência de disco antes de criar.
+4. Para criação manual: Python, build `pip install -r requirements.txt`, start `python server.py`, health check `/health`, as mesmas variáveis.
+5. Aguarde o deploy e abra a URL HTTPS. O navegador solicitará usuário e senha.
+
+O app cria as tabelas no banco vazio ao iniciar. No Render, recusa iniciar sem banco externo e senha. SQLite continua disponível para execução local; os dados locais existentes não são migrados automaticamente para o Neon.
+
+A proteção é HTTP Basic via HTTPS, sem cadastro de usuários ou recuperação de senha. `/health` é público e não retorna dados da fazenda. Faça backups do banco. Esta configuração não foi publicada nem validada com uma conta Neon real até que a conexão seja cadastrada pelo usuário.

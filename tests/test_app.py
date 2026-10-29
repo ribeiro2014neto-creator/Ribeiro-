@@ -21,4 +21,16 @@ class Workflow(unittest.TestCase):
   with self.assertRaises(ValueError):server.save(dict(kind='slaughter',lot=1,day='2026-03-01',heads=10,amount=4000,carcass=5000))
  def test_feed_before_entry_rejected(self):
   with self.assertRaises(ValueError):server.save(dict(kind='feed',lot=1,day='2025-12-31',amount=800))
+class DatabaseConfig(unittest.TestCase):
+ def test_postgres_uses_bound_parameters(self):
+  from unittest.mock import Mock
+  connection=Mock()
+  server.PostgresConnection(connection).execute('SELECT * FROM lots WHERE id=?',(7,))
+  connection.execute.assert_called_once_with('SELECT * FROM lots WHERE id=%s',(7,))
+ def test_schema_is_repeatable(self):
+  from unittest.mock import patch
+  with tempfile.TemporaryDirectory() as folder, patch.object(server,'DB',Path(folder)/'test.sqlite3'), patch.object(server,'DATABASE_URL',None):
+   server.initialize();server.initialize()
+   self.assertEqual(server.state(),{'lots':[],'events':[]})
 if __name__=='__main__':unittest.main()
+

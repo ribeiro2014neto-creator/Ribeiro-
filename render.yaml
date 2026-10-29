@@ -2,19 +2,15 @@ services:
   - type: web
     name: campo-pecuaria
     runtime: python
-    plan: starter
-    buildCommand: python -m compileall -q server.py
+    plan: free
+    buildCommand: pip install -r requirements.txt
     startCommand: python server.py
     healthCheckPath: /health
-    disk:
-      name: dados-campo
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
-      - key: PECUARIA_DB
-        value: /var/data/pecuaria.sqlite3
+      - key: DATABASE_URL
+        sync: false
       - key: APP_USER
         value: fazenda
       - key: APP_PASSWORD
